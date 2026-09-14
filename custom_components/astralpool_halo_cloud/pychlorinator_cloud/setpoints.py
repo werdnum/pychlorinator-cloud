@@ -30,6 +30,10 @@ PH_SETPOINT_STEP: Final[float] = 0.1
 ORP_SETPOINT_MIN_MV: Final[int] = 200
 ORP_SETPOINT_MAX_MV: Final[int] = 800
 
+POOL_CHLORINE_SETPOINT_MIN: Final[int] = 0
+POOL_CHLORINE_SETPOINT_MAX: Final[int] = 8
+POOL_CHLORINE_SETPOINT_STEP: Final[int] = 1
+
 
 class SetpointValidationError(ValueError):
     """Raised when a setpoint value is out of bounds or not encodable."""
@@ -73,11 +77,22 @@ def ph_setpoint_to_raw(value: float) -> int:
 
 
 def validate_orp_setpoint(value: int) -> int:
-    if not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise SetpointValidationError("ORP setpoint must be an integer in millivolts")
     if not ORP_SETPOINT_MIN_MV <= value <= ORP_SETPOINT_MAX_MV:
         raise SetpointValidationError(
             f"ORP setpoint must be between {ORP_SETPOINT_MIN_MV} and {ORP_SETPOINT_MAX_MV} mV"
+        )
+    return value
+
+
+def validate_pool_chlorine_setpoint(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise SetpointValidationError("Pool chlorine setpoint must be an integer")
+    if not POOL_CHLORINE_SETPOINT_MIN <= value <= POOL_CHLORINE_SETPOINT_MAX:
+        raise SetpointValidationError(
+            f"Pool chlorine setpoint must be between "
+            f"{POOL_CHLORINE_SETPOINT_MIN} and {POOL_CHLORINE_SETPOINT_MAX}"
         )
     return value
 
@@ -95,7 +110,7 @@ def build_setpoint_payload(
         "<BHBBB",
         ph_setpoint_to_raw(ph_setpoint),
         validate_orp_setpoint(orp_setpoint),
-        _require_byte("pool_chlorine_setpoint", pool_chlorine_setpoint),
+        validate_pool_chlorine_setpoint(pool_chlorine_setpoint),
         _require_byte("acid_setpoint", acid_setpoint),
         _require_byte("spa_chlorine_setpoint", spa_chlorine_setpoint),
     )

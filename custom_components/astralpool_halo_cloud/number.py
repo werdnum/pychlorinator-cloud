@@ -19,6 +19,9 @@ from .pychlorinator_cloud.setpoints import (
     PH_SETPOINT_MAX,
     PH_SETPOINT_MIN,
     PH_SETPOINT_STEP,
+    POOL_CHLORINE_SETPOINT_MAX,
+    POOL_CHLORINE_SETPOINT_MIN,
+    POOL_CHLORINE_SETPOINT_STEP,
     SetpointValidationError,
 )
 from .pychlorinator_cloud.websocket_client import ChlorinatorLiveData
@@ -68,6 +71,20 @@ NUMBER_DESCRIPTIONS: tuple[HaloNumberEntityDescription, ...] = (
         set_value_fn=lambda client, value: client.set_orp_setpoint(int(value)),
         update_value_fn=lambda data, value: setattr(data, "orp_setpoint", int(value)),
         is_supported_fn=lambda data: data.orp_setpoint is not None,
+    ),
+    HaloNumberEntityDescription(
+        key="pool_chlorine_setpoint_control",
+        name="Pool Chlorine Setpoint",
+        icon="mdi:beaker-plus-outline",
+        native_min_value=POOL_CHLORINE_SETPOINT_MIN,
+        native_max_value=POOL_CHLORINE_SETPOINT_MAX,
+        native_step=POOL_CHLORINE_SETPOINT_STEP,
+        mode=NumberMode.SLIDER,
+        entity_category=EntityCategory.CONFIG,
+        value_fn=lambda data: data.pool_chlorine_setpoint,
+        set_value_fn=lambda client, value: client.set_pool_chlorine_setpoint(int(value)),
+        update_value_fn=lambda data, value: setattr(data, "pool_chlorine_setpoint", int(value)),
+        is_supported_fn=lambda data: data.pool_chlorine_setpoint is not None,
     ),
     HaloNumberEntityDescription(
         key="heater_setpoint_control",
@@ -139,10 +156,16 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
 
     entity_description: HaloNumberEntityDescription
 
-    def _capability_bound(self, attr_name: str, fallback: float) -> float:
+    def _capability_bound(
+        self, attr_name: str, fallback: float, *, allow_zero: bool = False
+    ) -> float:
         data = self.coordinator.data
         value = getattr(data, attr_name, None) if data is not None else None
-        return float(value) if value is not None and value > 0 else fallback
+        if value is None:
+            return fallback
+        if allow_zero:
+            return float(value) if value >= 0 else fallback
+        return float(value) if value > 0 else fallback
 
     @property
     def native_min_value(self) -> float:
@@ -151,6 +174,12 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
             return self._capability_bound("min_ph_setpoint", PH_SETPOINT_MIN)
         if self.entity_description.key == "orp_setpoint_control":
             return self._capability_bound("min_orp_setpoint", ORP_SETPOINT_MIN_MV)
+        if self.entity_description.key == "pool_chlorine_setpoint_control":
+            return self._capability_bound(
+                "min_manual_chlorine_setpoint",
+                POOL_CHLORINE_SETPOINT_MIN,
+                allow_zero=True,
+            )
         return float(self.entity_description.native_min_value or 0)
 
     @property
@@ -162,6 +191,12 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
         if self.entity_description.key == "orp_setpoint_control":
             value = self._capability_bound("max_orp_setpoint", ORP_SETPOINT_MAX_MV)
             return value if value > self.native_min_value else ORP_SETPOINT_MAX_MV
+        if self.entity_description.key == "pool_chlorine_setpoint_control":
+            value = self._capability_bound(
+                "max_manual_chlorine_setpoint",
+                POOL_CHLORINE_SETPOINT_MAX,
+            )
+            return value if value > self.native_min_value else POOL_CHLORINE_SETPOINT_MAX
         return float(self.entity_description.native_max_value or 0)
 
     @property

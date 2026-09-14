@@ -2056,6 +2056,9 @@ class HaloWebSocketClient:
     async def set_orp_setpoint(self, value: int) -> None:
         await self.write_setpoints(orp_setpoint=value)
 
+    async def set_pool_chlorine_setpoint(self, value: int) -> None:
+        await self.write_setpoints(pool_chlorine_setpoint=value)
+
     def _require_known_heat_demand_value(self, name: str, value):
         if value is None:
             raise RuntimeError(
