@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+import math
 from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberEntityDescription, NumberMode
@@ -23,6 +24,8 @@ from .pychlorinator_cloud.setpoints import (
     POOL_CHLORINE_SETPOINT_MIN,
     POOL_CHLORINE_SETPOINT_STEP,
     SetpointValidationError,
+    pool_chlorine_setpoint_bounds,
+    validate_pool_chlorine_setpoint,
 )
 from .pychlorinator_cloud.websocket_client import ChlorinatorLiveData
 
@@ -156,16 +159,17 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
 
     entity_description: HaloNumberEntityDescription
 
-    def _capability_bound(
-        self, attr_name: str, fallback: float, *, allow_zero: bool = False
-    ) -> float:
+    def _capability_bound(self, attr_name: str, fallback: float) -> float:
         data = self.coordinator.data
         value = getattr(data, attr_name, None) if data is not None else None
-        if value is None:
-            return fallback
-        if allow_zero:
-            return float(value) if value >= 0 else fallback
-        return float(value) if value > 0 else fallback
+        return float(value) if value is not None and value > 0 else fallback
+
+    def _pool_chlorine_bounds(self) -> tuple[int, int]:
+        data = self.coordinator.data
+        return pool_chlorine_setpoint_bounds(
+            getattr(data, "min_manual_chlorine_setpoint", None),
+            getattr(data, "max_manual_chlorine_setpoint", None),
+        )
 
     @property
     def native_min_value(self) -> float:
@@ -175,11 +179,7 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
         if self.entity_description.key == "orp_setpoint_control":
             return self._capability_bound("min_orp_setpoint", ORP_SETPOINT_MIN_MV)
         if self.entity_description.key == "pool_chlorine_setpoint_control":
-            return self._capability_bound(
-                "min_manual_chlorine_setpoint",
-                POOL_CHLORINE_SETPOINT_MIN,
-                allow_zero=True,
-            )
+            return float(self._pool_chlorine_bounds()[0])
         return float(self.entity_description.native_min_value or 0)
 
     @property
@@ -192,11 +192,7 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
             value = self._capability_bound("max_orp_setpoint", ORP_SETPOINT_MAX_MV)
             return value if value > self.native_min_value else ORP_SETPOINT_MAX_MV
         if self.entity_description.key == "pool_chlorine_setpoint_control":
-            value = self._capability_bound(
-                "max_manual_chlorine_setpoint",
-                POOL_CHLORINE_SETPOINT_MAX,
-            )
-            return value if value > self.native_min_value else POOL_CHLORINE_SETPOINT_MAX
+            return float(self._pool_chlorine_bounds()[1])
         return float(self.entity_description.native_max_value or 0)
 
     @property
@@ -233,6 +229,20 @@ class HaloCloudSetpointNumber(HaloCloudEntity, NumberEntity):
             )
 
         try:
+            if self.entity_description.key == "pool_chlorine_setpoint_control":
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    or value != int(value)
+                ):
+                    raise SetpointValidationError(
+                        "Pool chlorine setpoint must be a finite integer"
+                    )
+                low, high = self._pool_chlorine_bounds()
+                validate_pool_chlorine_setpoint(
+                    int(value), minimum=low, maximum=high
+                )
             await self.entity_description.set_value_fn(client, value)
         except (RuntimeError, SetpointValidationError, ValueError) as err:
             raise HomeAssistantError(str(err)) from err

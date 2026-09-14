@@ -67,6 +67,41 @@ class TestWebSocketClientSetpoints(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(SetpointValidationError):
             await self.client.set_pool_chlorine_setpoint(-1)
+        self.client.send_command.assert_not_awaited()
+
+    async def test_device_capabilities_apply_to_all_explicit_writes(self):
+        self.client.data.min_manual_chlorine_setpoint = 1
+        self.client.data.max_manual_chlorine_setpoint = 10
+        await self.client.set_pool_chlorine_setpoint(10)
+        self.assertEqual(self.client.send_command.call_args.args[0][6], 10)
+        self.client.send_command.reset_mock()
+        for value in (0, 11, True, 4.5):
+            with self.subTest(value=value), self.assertRaises(SetpointValidationError):
+                await self.client.write_setpoints(pool_chlorine_setpoint=value)
+        self.client.send_command.assert_not_awaited()
+
+    async def test_existing_ph_orp_writes_preserve_chlorine_above_default_limit(self):
+        self.client.data.pool_chlorine_setpoint = 10
+        for method, value in ((self.client.set_ph_setpoint, 7.2),
+                              (self.client.set_orp_setpoint, 650)):
+            await method(value)
+            self.assertEqual(self.client.send_command.call_args.args[0][6], 10)
+
+    async def test_each_missing_preserved_field_prevents_send(self):
+        for field in ("ph_setpoint", "orp_setpoint", "acid_setpoint",
+                      "spa_chlorine_setpoint"):
+            saved = getattr(self.client.data, field)
+            setattr(self.client.data, field, None)
+            with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, field):
+                await self.client.set_pool_chlorine_setpoint(5)
+            setattr(self.client.data, field, saved)
+        self.client.send_command.assert_not_awaited()
+
+    async def test_failed_send_preserves_snapshot(self):
+        self.client.send_command.side_effect = RuntimeError("Not connected")
+        with self.assertRaisesRegex(RuntimeError, "Not connected"):
+            await self.client.set_pool_chlorine_setpoint(5)
+        self.assertEqual(self.client.data.pool_chlorine_setpoint, 3)
 
     async def test_missing_live_setpoint_raises_runtime_error(self):
         self.client.data.orp_setpoint = None

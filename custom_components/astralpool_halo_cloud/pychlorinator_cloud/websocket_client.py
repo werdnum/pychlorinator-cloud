@@ -33,7 +33,7 @@ from .exceptions import (
 from .error_codes import ERROR_CODE_TABLE
 from .light_colours import available_light_colours, resolve_light_colour
 from .payload_parsers import parse_data_payload
-from .setpoints import build_setpoint_command
+from .setpoints import build_setpoint_command, validate_pool_chlorine_setpoint
 from .signalling import map_signalling_failure
 
 LOGGER = logging.getLogger(__name__)
@@ -2011,6 +2011,12 @@ class HaloWebSocketClient:
         - Because the packet carries all setpoint fields together, omitted values are
           filled from the latest known live snapshot.
         """
+        if pool_chlorine_setpoint is not None:
+            pool_chlorine_setpoint = validate_pool_chlorine_setpoint(
+                pool_chlorine_setpoint,
+                minimum=self.data.min_manual_chlorine_setpoint,
+                maximum=self.data.max_manual_chlorine_setpoint,
+            )
         command = build_setpoint_command(
             ph_setpoint=(
                 ph_setpoint

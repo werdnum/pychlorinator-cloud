@@ -18,6 +18,7 @@ from custom_components.astralpool_halo_cloud.pychlorinator_cloud.setpoints impor
     build_setpoint_command,
     build_setpoint_payload,
     ph_setpoint_to_raw,
+    pool_chlorine_setpoint_bounds,
     validate_orp_setpoint,
     validate_ph_setpoint,
     validate_pool_chlorine_setpoint,
@@ -25,6 +26,22 @@ from custom_components.astralpool_halo_cloud.pychlorinator_cloud.setpoints impor
 
 
 class TestValidatePoolChlorineSetpoint(unittest.TestCase):
+    def test_capability_bounds(self):
+        for low, high, expected in (
+            (None, None, (0, 8)), (0, 8, (0, 8)), (1, 6, (1, 6)),
+            (0, 10, (0, 10)), (None, 6, (0, 6)), (1, None, (1, 8)),
+            (0, 0, (0, 8)), (9, 6, (0, 8)), (10, None, (0, 8)),
+            (-1, 8, (0, 8)), (0, 256, (0, 8)), (False, 8, (0, 8)),
+        ):
+            with self.subTest(low=low, high=high):
+                self.assertEqual(pool_chlorine_setpoint_bounds(low, high), expected)
+
+    def test_validation_uses_capability_bounds(self):
+        self.assertEqual(validate_pool_chlorine_setpoint(10, maximum=10), 10)
+        for value in (0, 7):
+            with self.subTest(value=value), self.assertRaises(SetpointValidationError):
+                validate_pool_chlorine_setpoint(value, minimum=1, maximum=6)
+
     def test_constants(self):
         self.assertEqual(POOL_CHLORINE_SETPOINT_MIN, 0)
         self.assertEqual(POOL_CHLORINE_SETPOINT_MAX, 8)
@@ -145,12 +162,19 @@ class TestBuildSetpointPayload(unittest.TestCase):
         self.assertEqual(acid, 2)
         self.assertEqual(spa_cl, 3)
 
-    def test_out_of_bounds_pool_chlorine_raises(self):
+    def test_preserves_controller_chlorine_above_default_range(self):
+        payload = build_setpoint_payload(
+            ph_setpoint=7.4, orp_setpoint=700, pool_chlorine_setpoint=10,
+            acid_setpoint=2, spa_chlorine_setpoint=3,
+        )
+        self.assertEqual(struct.unpack("<BHBBB", payload)[2], 10)
+
+    def test_unencodable_pool_chlorine_raises(self):
         with self.assertRaises(SetpointValidationError):
             build_setpoint_payload(
                 ph_setpoint=7.4,
                 orp_setpoint=700,
-                pool_chlorine_setpoint=9,
+                pool_chlorine_setpoint=256,
                 acid_setpoint=2,
                 spa_chlorine_setpoint=3,
             )

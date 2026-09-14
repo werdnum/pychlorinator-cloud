@@ -1,4 +1,7 @@
-"""Pytest configuration and Home Assistant stubs for unit testing."""
+"""Lightweight Home Assistant stubs for isolated unit tests.
+
+These tests exercise the entity and protocol logic, not a running HA instance.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +13,8 @@ from typing import Any
 from unittest.mock import MagicMock
 
 ROOT = Path(__file__).resolve().parents[1]
-INTEGRATION_ROOT = ROOT / "custom_components" / "astralpool_halo_cloud"
-
-for path_str in (str(ROOT), str(INTEGRATION_ROOT)):
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 class NumberMode(str, Enum):
@@ -120,6 +120,8 @@ ha_number.NumberMode = NumberMode
 ha_const = sys.modules["homeassistant.const"]
 ha_const.EntityCategory = EntityCategory
 ha_const.EVENT_HOMEASSISTANT_STOP = "homeassistant_stop"
+
+sys.modules["homeassistant.exceptions"].HomeAssistantError = HomeAssistantError
 
 ha_coordinator = sys.modules["homeassistant.helpers.update_coordinator"]
 ha_coordinator.CoordinatorEntity = CoordinatorEntity
